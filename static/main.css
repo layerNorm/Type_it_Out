@@ -520,3 +520,9 @@ kbd {
     font-size: 0.75rem;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  span.current {
+    animation: none;
+  }
+}
