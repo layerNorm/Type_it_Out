@@ -14,6 +14,8 @@ let passageCount: number = 0;
 let isViewingResults: boolean = false;
 let toastTimeout: number | null = null;
 let wordCount: number = 50;
+let isCapsLockWarningActive = false;
+let currentToastMessage = "";
 
 async function initialize(): Promise<void> {
   typeTextBox = document.querySelector("#typeTextBox") as HTMLInputElement;
@@ -24,8 +26,10 @@ async function initialize(): Promise<void> {
   }
 
   loadThemePreference();
+  loadWordCountPreference();
   setupThemeToggle();
   setupWordCountSelector();
+  setupCapsLockWarning();
   resetTimePressedArray();
   typeTextBox.addEventListener("input", onInput);
 
@@ -104,6 +108,24 @@ function onInput(e: Event): void {
   }
 }
 
+function setupCapsLockWarning(): void {
+  typeTextBox.addEventListener('keydown', (e) => {
+    const isCapsLockOn = e.getModifierState("CapsLock");
+
+    if (isCapsLockOn) {
+      if (!isCapsLockWarningActive) {
+        showToast("WARNING: Caps Lock is ON");
+        isCapsLockWarningActive = true;
+      }
+    } else {
+      if (isCapsLockWarningActive) {
+        hideToast();
+        isCapsLockWarningActive = false;
+      }
+    }
+  });
+}
+
 function resetTimePressedArray(): void {
   timePressed = [];
   for (let i = 0; i < passageHandler.wordArray.length; i++) {
@@ -120,6 +142,7 @@ function setupWordCountSelector(): void {
       if (count === wordCount) return;
 
       wordCount = count;
+      localStorage.setItem('word-count-preference', count.toString());
 
       buttons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -129,6 +152,32 @@ function setupWordCountSelector(): void {
       }
     });
   });
+}
+
+function loadWordCountPreference(): void {
+  const savedCount = localStorage.getItem('word-count-preference');
+  if (savedCount) {
+    const parsedCount = parseInt(savedCount);
+    const buttons = document.querySelectorAll('.wc-btn:not(#themeToggle)') as NodeListOf<HTMLButtonElement>;
+    let found = false;
+
+    buttons.forEach(btn => {
+      const count = parseInt(btn.dataset.count!);
+      if (count === parsedCount) {
+        btn.classList.add('active');
+        wordCount = parsedCount;
+        found = true;
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    if (!found) {
+      // Fallback to default if saved count is invalid
+      buttons[2].classList.add('active'); // Default 50 is usually at index 2
+      wordCount = 50;
+    }
+  }
 }
 
 function generateSortedCharList(passageResult: PassageResult): void {
@@ -179,7 +228,12 @@ function showToast(message: string): void {
   const toast = document.getElementById("toast");
   if (!toast) return;
 
-  toast.textContent = message;
+  // If the message is different or we are forcing an update
+  if (toast.textContent !== message) {
+    toast.textContent = message;
+    currentToastMessage = message;
+  }
+  
   toast.classList.add("visible");
 
   if (toastTimeout) {
@@ -189,6 +243,10 @@ function showToast(message: string): void {
   toastTimeout = window.setTimeout(() => {
     toast.classList.remove("visible");
     toastTimeout = null;
+    // If the toast times out naturally, the warning is no longer active
+    if (currentToastMessage === "WARNING: Caps Lock is ON") {
+        isCapsLockWarningActive = false;
+    }
   }, 2000);
 }
 
@@ -201,6 +259,12 @@ function hideToast(): void {
   if (toastTimeout) {
     clearTimeout(toastTimeout);
     toastTimeout = null;
+  }
+
+  // Only reset the flag if we are hiding the caps lock warning specifically
+  if (currentToastMessage === "WARNING: Caps Lock is ON") {
+      isCapsLockWarningActive = false;
+      currentToastMessage = "";
   }
 }
 
@@ -286,6 +350,12 @@ function displayResults(passageResult: PassageResult): void {
   document.getElementById("wordAccuracy")!.textContent = passageResult.wordAccuracy.toString() + "%";
   document.getElementById("correctWords")!.textContent = passageResult.correctWords.toString();
   document.getElementById("wrongWords")!.textContent = passageResult.wrongWords.toString();
+
+  const summary = sessionTracker.getSessionSummary();
+  document.getElementById("sessionWPM")!.textContent = summary.averageWPM.toString();
+  document.getElementById("sessionAccuracy")!.textContent = summary.averageAccuracy.toString() + "%";
+  document.getElementById("sessionCorrect")!.textContent = summary.totalCorrect.toString();
+  document.getElementById("sessionWrong")!.textContent = summary.totalWrong.toString();
 
   generateSortedCharList(passageResult);
   updateCharStatsDisplay(0, passageResult);
